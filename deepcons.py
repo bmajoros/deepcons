@@ -1,9 +1,8 @@
 #!/usr/bin/env python
 #========================================================================
-# BlueSTARR-multitask Version 0.1
+# DeepCons Version 0.1
 #
 # Adapted from DeepSTARR by Bill Majoros (bmajoros@alumni.duke.edu)
-# and Alexander Thomson.
 #========================================================================
 import gzip
 import time
@@ -18,7 +17,6 @@ import keras_nlp
 from keras_nlp.layers import SinePositionEncoding, TransformerEncoder, RotaryEmbedding
 from keras import models
 from keras.models import Sequential, Model
-#from keras.layers import RotaryEmbedding
 from keras.optimizers import Adam
 from keras.callbacks import EarlyStopping, History, ModelCheckpoint
 import keras.backend as backend
@@ -27,7 +25,6 @@ import pandas as pd
 import numpy as np
 import ProgramName
 import sys
-#import IOHelper
 import SequenceHelper
 import random
 from scipy import stats
@@ -36,7 +33,6 @@ from scipy.stats import spearmanr
 from NeuralConfig import NeuralConfig
 from Rex import Rex
 rex=Rex()
-#from rotary_embedding_tensorflow import apply_rotary_emb, RotaryEmbedding
 
 
 
@@ -44,8 +40,6 @@ rex=Rex()
 #                                GLOBALS
 #========================================================================
 config=None
-NUM_DNA=None # array: numbers of DNA replicates in each cell type
-NUM_RNA=None # array: numbers of RNA replicates in each cell type
 #RANDOM_SEED=1234
 EPSILON=tf.cast(1e-10,tf.float32)
 
@@ -63,13 +57,12 @@ def main(configFile,subdir,modelFilestem):
 
     # Load data
     print("loading data",flush=True)
-    shouldRevComp=config.RevComp==1
     (X_train_sequence, X_train_seq_matrix, X_train, Y_train, idx_train) = \
-        prepare_input("train",subdir,shouldRevComp,config.MaxTrain,config)
+        prepare_input("train",subdir,config.MaxTrain,config)
     (X_valid_sequence, X_valid_seq_matrix, X_valid, Y_valid, idx_val) = \
-        prepare_input("validation",subdir,shouldRevComp,config.MaxTrain,config)
+        prepare_input("validation",subdir,config.MaxTrain,config)
     (X_test_sequence, X_test_seq_matrix, X_test, Y_test, idx_test) = \
-        prepare_input("test",subdir,shouldRevComp,config.MaxTest,config) \
+        prepare_input("test",subdir,config.MaxTest,config) \
         if(config.ShouldTest!=0) else (None, None, None, None)
     seqlen=X_train.shape[1]
 
@@ -216,6 +209,21 @@ def mseClosure(taskNum):
     return loss
 
 
+def computeNaiveTheta(line,DNAreps,RNAreps):
+    numTasks=len(DNAreps)
+    a=0; rec=[]
+    for i in range(numTasks):
+        b=a+DNAreps[i]
+        c=b+RNAreps[i]
+        DNA=line[a:b] 
+        RNA=line[b:c]
+        avgX=sum(DNA)/DNAreps[i]
+        avgY=sum(RNA)/RNAreps[i]  # normalized data
+        naiveTheta=avgY/avgX
+        rec.append(tf.math.log(naiveTheta)) # log-scale
+        a=c
+    return rec
+
 
 def loadFasta(fasta_path, as_dict=False,uppercase=False, stop_at=None,
               revcomp=False):
@@ -271,23 +279,31 @@ def loadCounts(filename,maxCases,config):
     return (DNAreps,RNAreps,lines)
 
 
-def computeNaiveTheta(line,DNAreps,RNAreps):
-    numTasks=len(DNAreps)
-    a=0; rec=[]
-    for i in range(numTasks):
-        b=a+DNAreps[i]
-        c=b+RNAreps[i]
-        DNA=line[a:b] 
-        RNA=line[b:c]
-        avgX=sum(DNA)/DNAreps[i]
-        avgY=sum(RNA)/RNAreps[i]  # normalized data
-        naiveTheta=avgY/avgX
-        rec.append(tf.math.log(naiveTheta)) # log-scale
-        a=c
-    return rec
+def subsetFields(recs,header):
+    seqI=header.index["amino_sequence"]
+    thetaI=header.index["theta"]
+    seqs=[]; thetas=[]
+    for line in lines:
+        line=line.rstrip().split("\t")
+        seqs.append(line[seqI])
+        thetas.append(float(line[thetaI]))
+    return (seqs,thetas)
+    
 
+#   prepare_input("train",subdir,config.MaxTrain,config)
+def prepare_input(set,subdir,maxCases,config):
+    infile=set+".txt.gz"
+    with gzip.open(infile,"rt") as IN:
+        lines=readlines(IN)
+        header=lines[0].rstrip().split("\t")
+        recs=lines[1:]
+        (seqs,thetas)=subsetFields(recs,header)
+        thetas=np.array(thetas)
+        SequenceHelper.do_one_hot_encoding(seqs,maxLen)
+        return (seqs,thetas)
 
-def prepare_input(set,subdir,shouldRevComp,maxCases,config):
+        
+===
     # Convert sequences to one-hot encoding matrix
     file_seq = str(subdir+"/" + set + ".fasta.gz")
     input_fasta_data_A=loadFasta(file_seq,uppercase=True,revcomp=shouldRevComp,
@@ -296,6 +312,7 @@ def prepare_input(set,subdir,shouldRevComp,maxCases,config):
     seq_matrix_A = SequenceHelper.do_one_hot_encoding(input_fasta_data_A.sequence, sequence_length, SequenceHelper.parse_alpha_to_seq)
     X = np.nan_to_num(seq_matrix_A) # Replace NaN with 0 and inf w/big number
     X_reshaped = X.reshape((X.shape[0], X.shape[1], X.shape[2]))
+
     (DNAreps,RNAreps,Y)=loadCounts(subdir+"/"+set+"-counts.txt.gz",
                                    maxCases,config)
     global NUM_DNA

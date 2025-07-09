@@ -13,6 +13,8 @@ from builtins import (bytes, dict, int, list, object, range, str, ascii,
 import sys
 import ProgramName
 
+MIN_LEN=10
+
 KEEP=["gene_id","gene_name","strand","transcript_id","gene_region_identifier",
       "amino_sequence","theta","theta_upper","theta_lower",
       "missense","lof","total_variants",
@@ -29,8 +31,7 @@ def indexHeader(header):
         i+=1
     return index
 
-def subsetLine(line,index):
-    fields=line.rstrip().split("\t")
+def subsetLine(fields,index):
     kept=[]
     for term in KEEP:
         #print(term,index[term],fields[index[term]],sep="\t")
@@ -51,6 +52,10 @@ with open(infile,"rt") as IN:
     header=IN.readline().rstrip().split("\t")
     index=indexHeader(header)
     for line in IN:
+        line=line.rstrip().split("\t")
+        if(line[index["theta"]]=="NA"): continue
+        #print(len(line[index["amino_sequence"]]),MIN_LEN)
+        if(len(line[index["amino_sequence"]])<MIN_LEN): continue
         keep=subsetLine(line,index)
         print("\t".join(keep),file=OUT)
     
