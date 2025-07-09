@@ -280,13 +280,16 @@ def loadCounts(filename,maxCases,config):
     return (DNAreps,RNAreps,lines)
 
 
-def subsetFields(recs,header):
-    seqI=header.index["amino_sequence"]
-    thetaI=header.index["theta"]
+def subsetFields(lines,header):
+    seqI=header.index("amino_sequence")
+    thetaI=header.index("theta")
     seqs=[]; thetas=[]
     for line in lines:
         line=line.rstrip().split("\t")
-        seqs.append(line[seqI][:MAX_LEN])
+        if(len(line)<10): continue
+        seq=line[seqI]
+        seq=seq[:MAX_LEN]
+        seqs.append(seq)
         thetas.append(float(line[thetaI]))
     return (seqs,thetas)
     
@@ -297,13 +300,16 @@ def prepare_input(set,subdir,maxCases,config):
     lines=[]
     with gzip.open(infile,"rt") as IN:
         for line in IN:
-            lines.append(len)
+            lines.append(line)
             if(len(lines)>=maxCases): break
     header=lines[0].rstrip().split("\t")
     recs=lines[1:]
     (seqs,thetas)=subsetFields(recs,header)
     thetas=np.array(thetas)
-    SequenceHelper.do_one_hot_encoding(seqs,maxLen)
+    #seqs=parse_alpha_to_seq(seqs)
+    #seqs=pd.DataFrame(seqs)
+    # print(len(seqs)); 44339
+    seqs=SequenceHelper.do_one_hot_encoding(seqs,MAX_LEN)
     return (seqs,thetas)
 
  
