@@ -40,6 +40,7 @@ rex=Rex()
 #                                GLOBALS
 #========================================================================
 config=None
+MAX_LEN=800
 #RANDOM_SEED=1234
 EPSILON=tf.cast(1e-10,tf.float32)
 
@@ -57,11 +58,11 @@ def main(configFile,subdir,modelFilestem):
 
     # Load data
     print("loading data",flush=True)
-    (X_train_sequence, X_train_seq_matrix, X_train, Y_train, idx_train) = \
+    (X_train,Y_train) = \
         prepare_input("train",subdir,config.MaxTrain,config)
-    (X_valid_sequence, X_valid_seq_matrix, X_valid, Y_valid, idx_val) = \
+    (X_valid,Y_valid) = \
         prepare_input("validation",subdir,config.MaxTrain,config)
-    (X_test_sequence, X_test_seq_matrix, X_test, Y_test, idx_test) = \
+    (X_test,Y_test) = \
         prepare_input("test",subdir,config.MaxTest,config) \
         if(config.ShouldTest!=0) else (None, None, None, None)
     seqlen=X_train.shape[1]
@@ -285,7 +286,7 @@ def subsetFields(recs,header):
     seqs=[]; thetas=[]
     for line in lines:
         line=line.rstrip().split("\t")
-        seqs.append(line[seqI])
+        seqs.append(line[seqI][:MAX_LEN])
         thetas.append(float(line[thetaI]))
     return (seqs,thetas)
     
@@ -293,35 +294,17 @@ def subsetFields(recs,header):
 #   prepare_input("train",subdir,config.MaxTrain,config)
 def prepare_input(set,subdir,maxCases,config):
     infile=set+".txt.gz"
+    lines=[]
     with gzip.open(infile,"rt") as IN:
-        lines=readlines(IN)
-        header=lines[0].rstrip().split("\t")
-        recs=lines[1:]
-        (seqs,thetas)=subsetFields(recs,header)
-        thetas=np.array(thetas)
-        SequenceHelper.do_one_hot_encoding(seqs,maxLen)
-        return (seqs,thetas)
-
-        
-===
-    # Convert sequences to one-hot encoding matrix
-    file_seq = str(subdir+"/" + set + ".fasta.gz")
-    input_fasta_data_A=loadFasta(file_seq,uppercase=True,revcomp=shouldRevComp,
-                                 stop_at=maxCases)
-    sequence_length = len(input_fasta_data_A.sequence.iloc[0])
-    seq_matrix_A = SequenceHelper.do_one_hot_encoding(input_fasta_data_A.sequence, sequence_length, SequenceHelper.parse_alpha_to_seq)
-    X = np.nan_to_num(seq_matrix_A) # Replace NaN with 0 and inf w/big number
-    X_reshaped = X.reshape((X.shape[0], X.shape[1], X.shape[2]))
-
-    (DNAreps,RNAreps,Y)=loadCounts(subdir+"/"+set+"-counts.txt.gz",
-                                   maxCases,config)
-    global NUM_DNA
-    global NUM_RNA
-    NUM_DNA=DNAreps
-    NUM_RNA=RNAreps
-    matrix=pd.DataFrame(Y)
-    matrix=tf.cast(matrix,tf.float32)
-    return (input_fasta_data_A.sequence, seq_matrix_A, X_reshaped, matrix, input_fasta_data_A.idx)
+        for line in IN:
+            lines.append(len)
+            if(len(lines)>=maxCases): break
+    header=lines[0].rstrip().split("\t")
+    recs=lines[1:]
+    (seqs,thetas)=subsetFields(recs,header)
+    thetas=np.array(thetas)
+    SequenceHelper.do_one_hot_encoding(seqs,maxLen)
+    return (seqs,thetas)
 
  
 def BuildModel(seqlen):
