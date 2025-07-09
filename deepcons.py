@@ -67,6 +67,9 @@ def main(configFile,subdir,modelFilestem):
         if(config.ShouldTest!=0) else (None, None, None, None)
     seqlen=X_train.shape[1]
 
+    print(X_train.shape)
+    print(Y_train.shape)
+    
     # Build model
     model=BuildModel(seqlen)
     model.summary()
@@ -76,23 +79,23 @@ def main(configFile,subdir,modelFilestem):
         print("Training...",flush=True)
         print("Training set:",X_train.shape) #,Y_train.shape)
         (model,history)=train(model,X_train,Y_train,X_valid,Y_valid)
-        print(history.history)
+        #print(history.history)
         print("Done training",flush=True)
-        print("loss",history.history['loss'])
-        print("val_loss",history.history['val_loss'])
+        #print("loss",history.history['loss'])
+        #print("val_loss",history.history['val_loss'])
     
     # Save model to a file
     model_json=model.to_json()
     with open(modelFilestem+".json","w") as json_file:
         json_file.write(model_json)
     model.save_weights(modelFilestem+".h5")
-
+    
     # Test and report accuracy
     if(config.ShouldTest!=0):
         numTasks=len(config.Tasks)
         for i in range(numTasks):
             summary_statistics(X_test,Y_test,"Test",i,numTasks,
-                               config.Tasks[i],model,idx_test,modelFilestem)
+                               config.Tasks[i],model,modelFilestem)
     print('Min validation loss:', round(min(history.history['val_loss']), 4))
 
     # Report elapsed time
@@ -103,21 +106,20 @@ def main(configFile,subdir,modelFilestem):
 
 
     
-def summary_statistics(X, Y, set, taskNum, numTasks, taskName, model, idx, modelFilestem):
+def summary_statistics(X, Y, set, taskNum, numTasks, taskName, model, modelFilestem):
     pred = model.predict(X, batch_size=config.BatchSize)
-    if (config.useCustomLoss) :
-        naiveTheta, cor=naiveCorrelation(Y,pred,taskNum,numTasks) # naiveTheta: normal scale, pred: log scale
-        df = pd.DataFrame({'idx':idx, 'true':tf.math.log(naiveTheta),'predicted': pred.squeeze()}) # log scale
-        mse = np.mean((df['true'] - df['predicted'])**2)
-        # df.to_csv(modelFilestem+'.txt', index = False, sep='\t')
-    else:
-        cor=stats.spearmanr(tf.math.exp(pred.squeeze()),tf.math.exp(Y))
-        df = pd.DataFrame({'idx':idx, 'true':Y.numpy().ravel(),'predicted': pred.squeeze()}) # log scale
-        mse = np.mean((df['true'] - df['predicted'])**2)
-        # df.to_csv(modelFilestem+'.txt', index = False, sep='\t')
+    cor=stats.spearmanr(pred.squeeze(),Y)
+    #df = pd.DataFrame({'idx':idx, 'true':Y.numpy().ravel(),'predicted': pred.squeeze()}) # log scale
+    mse = np.mean((Y - pred.squeeze())**2)
+    # df.to_csv(modelFilestem+'.txt', index = False, sep='\t')
     
     print(taskName+" rho=",cor.statistic,"p=",cor.pvalue)
     print(taskName+' mse=', mse)
+
+    # Save predictions
+    with open("predictions.txt","wt") as OUT:
+        for p in pred.squeeze():
+            print(p,file=OUT)
 
 
     
@@ -317,7 +319,7 @@ def BuildModel(seqlen):
     # Build model
 
     # Input layer
-    inputLayer=kl.Input(shape=(seqlen,4))
+    inputLayer=kl.Input(shape=(seqlen,20))
     x=inputLayer
 
     # Optional convolutional layers
