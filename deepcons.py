@@ -43,7 +43,7 @@ config=None
 MAX_LEN=800
 #RANDOM_SEED=1234
 EPSILON=tf.cast(1e-10,tf.float32)
-
+PRED_FILE=None
 
 #=========================================================================
 #                                main()
@@ -81,8 +81,8 @@ def main(configFile,subdir,modelFilestem):
         (model,history)=train(model,X_train,Y_train,X_valid,Y_valid)
         #print(history.history)
         print("Done training",flush=True)
-        #print("loss",history.history['loss'])
-        #print("val_loss",history.history['val_loss'])
+        print("loss",history.history['loss'])
+        print("val_loss",history.history['val_loss'])
     
     # Save model to a file
     model_json=model.to_json()
@@ -113,7 +113,7 @@ def summary_statistics(X, Y, set, taskNum, numTasks, taskName, model, modelFiles
     print(taskName+" rho=",cor.statistic,"p=",cor.pvalue)
     print(taskName+' mse=', mse)
     # Save predictions
-    with open("predictions.txt","wt") as OUT:
+    with open(PRED_FILE,"wt") as OUT:
         for p in pred.squeeze():
             print(p,file=OUT)
 
@@ -249,8 +249,9 @@ def train(model,X_train,Y_train,X_valid,Y_valid):
 #=========================================================================
 #                         Command Line Interface
 #=========================================================================
-if(len(sys.argv)!=4):
-    exit(ProgramName.get()+" <parms.config> <data-subdir> <out:model-filestem>\n")
-(configFile,subdir,modelFilestem)=sys.argv[1:]
+if(len(sys.argv)!=5):
+    exit(ProgramName.get()+" <parms.config> <data-subdir> <out:model-filestem> <out:predictions.txt>\n")
+(configFile,subdir,modelFilestem,predFile)=sys.argv[1:]
+PRED_FILE=predFile
 main(configFile,subdir,modelFilestem)
 
