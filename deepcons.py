@@ -109,178 +109,19 @@ def main(configFile,subdir,modelFilestem):
 def summary_statistics(X, Y, set, taskNum, numTasks, taskName, model, modelFilestem):
     pred = model.predict(X, batch_size=config.BatchSize)
     cor=stats.spearmanr(pred.squeeze(),Y)
-    #df = pd.DataFrame({'idx':idx, 'true':Y.numpy().ravel(),'predicted': pred.squeeze()}) # log scale
     mse = np.mean((Y - pred.squeeze())**2)
-    # df.to_csv(modelFilestem+'.txt', index = False, sep='\t')
-    
     print(taskName+" rho=",cor.statistic,"p=",cor.pvalue)
     print(taskName+' mse=', mse)
-
     # Save predictions
     with open("predictions.txt","wt") as OUT:
         for p in pred.squeeze():
             print(p,file=OUT)
 
 
-    
-def naiveCorrelation(y_true, y_pred, taskNum, numTasks):
-    a=0
-    for i in range(taskNum): a+=NUM_DNA[i]+NUM_RNA[i]
-    b=a+NUM_DNA[taskNum]
-    c=b+NUM_RNA[taskNum]
-    DNA=y_true[:,a:b] #+1
-    RNA=y_true[:,b:c] #+1
-    avgX = tf.reduce_mean(DNA, axis=1)
-    avgY = tf.reduce_mean(RNA, axis=1)
-    naiveTheta = avgY / avgX
-    #print("naiveTheta=",naiveTheta)
-    #print("y_pred=",tf.math.exp(y_pred[taskNum].squeeze()))
-    cor=None
-    if(numTasks==1):
-        cor=stats.spearmanr(tf.math.exp(y_pred.squeeze()),naiveTheta)
-    else:
-        cor=stats.spearmanr(tf.math.exp(y_pred[taskNum].squeeze()),naiveTheta)
-    return naiveTheta, cor
-
-#def Spearman(y_true, y_pred):
-#     return ( tf.py_function(spearmanr, [tf.cast(y_pred, tf.float32), 
-#                       tf.cast(y_true, tf.float32)], Tout = tf.float32) )
-
-
-
 
 #========================================================================
 #                               FUNCTIONS
 #========================================================================
-def log(x):
-    return tf.math.log(x)
-
-def logGam(x):
-    return tf.math.lgamma(x)
-
-def logLik(sumX,numX,Yj,logTheta,alpha,beta,numRNA):
-    n=tf.shape(sumX)[0]
-    sumX=tf.tile(tf.reshape(sumX,[n,1]),[1,numRNA])
-    theta=tf.math.exp(logTheta) # assume the model is predicting log(theta)
-    LL=(sumX+alpha)*log(beta+numX)+logGam(Yj+sumX+alpha)+Yj*log(theta)\
-        -logGam(sumX+alpha)-logGam(Yj+1)-(Yj+sumX+alpha)*log(theta+beta+numX)
-    return tf.reduce_sum(LL,axis=1) # sum logLik across iid replicates
-
-@tf.autograph.experimental.do_not_convert
-def makeClosure(taskNum):
-    a=0
-    for i in range(taskNum): a+=NUM_DNA[i]+NUM_RNA[i]
-    b=a+NUM_DNA[taskNum]
-    c=b+NUM_RNA[taskNum]
-    @tf.autograph.experimental.do_not_convert
-    def loss(y_true, y_pred):
-        global EPSILON
-        DNA=y_true[:,a:b]
-        RNA=y_true[:,b:c]
-        sumX=tf.reduce_sum(DNA,axis=1)
-        LL=-logLik(sumX,b-a,RNA,y_pred,EPSILON,EPSILON,NUM_RNA[taskNum])
-        #return tf.reduce_mean(LL,axis=-1) # Put on same scale as MSE
-        #print("pred=",y_pred)
-        #print("-LL=",LL)
-        return LL
-    return loss
-
-@tf.autograph.experimental.do_not_convert
-def mseClosure(taskNum):
-    a=0
-    for i in range(taskNum): a+=NUM_DNA[i]+NUM_RNA[i]
-    b=a+NUM_DNA[taskNum]
-    c=b+NUM_RNA[taskNum]
-    @tf.autograph.experimental.do_not_convert
-    def loss(y_true, y_pred):
-        global EPSILON
-        DNA=y_true[:,a:b]+1
-        RNA=y_true[:,b:c]+1
-        sumX=tf.reduce_sum(DNA,axis=1) # axis=1: sum across replicates
-        sumY=tf.reduce_sum(RNA,axis=1) # axis=1: sum across replicates
-        naiveTheta=sumY/sumX
-        mse=tf.math.reduce_mean(tf.math.square(y_pred-tf.math.log(naiveTheta)),
-                                axis=1)
-        #mse=tf.math.reduce_mean(tf.math.square(tf.math.exp(y_pred)-naiveTheta))
-                                ### axis=-1)
-        #print("log(naiveTheta)=",tf.math.log(naiveTheta))
-        #print("pred=",y_pred)
-        #print("mse=",mse)
-        return mse
-        #cor=stats.spearmanr(tf.math.exp(y_pred[taskNum].squeeze()),naiveTheta)
-        #return cor
-    return loss
-
-
-def computeNaiveTheta(line,DNAreps,RNAreps):
-    numTasks=len(DNAreps)
-    a=0; rec=[]
-    for i in range(numTasks):
-        b=a+DNAreps[i]
-        c=b+RNAreps[i]
-        DNA=line[a:b] 
-        RNA=line[b:c]
-        avgX=sum(DNA)/DNAreps[i]
-        avgY=sum(RNA)/RNAreps[i]  # normalized data
-        naiveTheta=avgY/avgX
-        rec.append(tf.math.log(naiveTheta)) # log-scale
-        a=c
-    return rec
-
-
-def loadFasta(fasta_path, as_dict=False,uppercase=False, stop_at=None,
-              revcomp=False):
-    fastas = []
-    seq = None
-    header = None
-    for r in (gzip.open(fasta_path) if fasta_path.endswith(".gz") else open(fasta_path)):
-        if type(r) is bytes: r = r.decode("utf-8")
-        r = r.strip()
-        if r.startswith(">"):
-            if seq != None and header != None:
-                fastas.append([header, seq])
-                if stop_at != None and len(fastas) >= stop_at:
-                    break
-            seq = ""
-            header = r[1:]
-        else:
-            if seq != None:
-                seq += r.upper() if uppercase else r
-            else:
-                seq = r.upper() if uppercase else r
-    if stop_at != None and len(fastas) < stop_at:
-        fastas.append([header, seq])
-    elif stop_at == None:
-        fastas.append([header, seq])
-    if as_dict:
-        return {h: s for h, s in fastas}
-    return pd.DataFrame({'location': [e[0] for e in fastas],
-                         'idx': [e[0].split(' ')[0] for e in fastas],
-                         'sequence': [e[1] for e in fastas]})
-
-
-def loadCounts(filename,maxCases,config):
-    IN=gzip.open(filename) if filename.endswith(".gz") else open(filename)
-    header=IN.readline()
-    if type(header) is bytes: header = header.decode("utf-8")
-    if(not rex.find("DNA=([,\d]+)\s+RNA=([,\d]+)",header)):
-        raise Exception("Can't parse counts file header: "+header)
-    DNAreps=[int(x) for x in rex[1].split(",")]
-    RNAreps=[int(x) for x in rex[2].split(",")]
-    numTasks=len(DNAreps)
-    linesRead=0
-    lines=[]
-    for line in IN:
-        if type(line) is bytes: line = line.decode("utf-8")
-        fields=line.rstrip().split()
-        fields=[float(x) for x in fields] # normalized data
-        if(config.useCustomLoss): lines.append(fields)
-        else: lines.append(computeNaiveTheta(fields,DNAreps,RNAreps))
-        linesRead+=1
-        if(linesRead>=maxCases): break
-    lines=np.array(lines)
-    return (DNAreps,RNAreps,lines)
-
 
 def subsetFields(lines,header):
     seqI=header.index("amino_sequence")
@@ -308,9 +149,6 @@ def prepare_input(set,subdir,maxCases,config):
     recs=lines[1:]
     (seqs,thetas)=subsetFields(recs,header)
     thetas=np.array(thetas)
-    #seqs=parse_alpha_to_seq(seqs)
-    #seqs=pd.DataFrame(seqs)
-    # print(len(seqs)); 44339
     seqs=SequenceHelper.do_one_hot_encoding(seqs,MAX_LEN)
     return (seqs,thetas)
 
@@ -387,7 +225,7 @@ def BuildModel(seqlen):
     for i in range(numTasks):
         task=tasks[i]
         outputs.append(kl.Dense(1,activation='linear',name=task)(x))
-        loss=makeClosure(i) if config.useCustomLoss else "mse" #mseClosure(i)
+        loss="mse"
         losses.append(loss)
     model = keras.models.Model([inputLayer], outputs)
     model.compile(keras.optimizers.Adam(learning_rate=config.LearningRate),
