@@ -42,7 +42,6 @@ rex=Rex()
 config=None
 MAX_LEN=800
 #RANDOM_SEED=1234
-EPSILON=tf.cast(1e-10,tf.float32)
 PRED_FILE=None
 
 #=========================================================================
@@ -122,6 +121,20 @@ def summary_statistics(X, Y, set, taskNum, numTasks, taskName, model, modelFiles
 #========================================================================
 #                               FUNCTIONS
 #========================================================================
+def log(x):
+    return tf.math.log(x)
+
+def logLik(p,k,N):
+    # proportional to: k*log(p)+(n-k)*log(1-p)
+    LL=k*log(p)+(n-k)*log(1-p)
+    return LL
+
+@tf.autograph.experimental.do_not_convert
+def customLoss(y_true, y_pred):
+    missense=y_true[:0]
+    totalVar=y_true[:1]
+    LL=-logLik(y_pred,missense,totalVar)
+    return LL
 
 def subsetFields(lines,header):
     seqI=header.index("amino_sequence")
@@ -129,20 +142,20 @@ def subsetFields(lines,header):
     lofI=header.index("lof")
     totalVariantsI=header.index("total_variants")
     #thetaI=header.index("theta")
-    seqs=[]; thetas=[]
+    seqs=[]; Y=[]
     for line in lines:
         line=line.rstrip().split("\t")
         if(len(line)<10): continue
         seq=line[seqI]
         seq=seq[:MAX_LEN]
-        missense=float(line[missenseI])
-        lof=float(line[lofI])
-        totalVariants=float(line[totalVariantsI])
-        naiveTheta=(missense+1) / (totalVariants+2)
         seqs.append(seq)
-        thetas.append(naiveTheta)
+        missense=int(line[missenseI])
+        totalVariants=int(line[totalVariantsI])
+        Y.append([missense,totalVariants])
+        #naiveTheta=(missense+1) / (totalVariants+2)
+        #thetas.append(naiveTheta)
         #thetas.append(float(line[thetaI]))
-    return (seqs,thetas)
+    return (seqs,Y)
     
 
 #   prepare_input("train",subdir,config.MaxTrain,config)
@@ -155,10 +168,11 @@ def prepare_input(set,subdir,maxCases,config):
             if(len(lines)>=maxCases): break
     header=lines[0].rstrip().split("\t")
     recs=lines[1:]
-    (seqs,thetas)=subsetFields(recs,header)
-    thetas=np.array(thetas)
+    (seqs,Y)=subsetFields(recs,header)
+    matrix=pd.DataFrame(Y)
+    matrix=tf.cast(matrix,tf.float32)
     seqs=SequenceHelper.do_one_hot_encoding(seqs,MAX_LEN)
-    return (seqs,thetas)
+    return (seqs,Y)
 
  
 def BuildModel(seqlen):
@@ -233,7 +247,7 @@ def BuildModel(seqlen):
     for i in range(numTasks):
         task=tasks[i]
         outputs.append(kl.Dense(1,activation='linear',name=task)(x))
-        loss="mse"
+        loss=customLoss #"mse"
         losses.append(loss)
     model = keras.models.Model([inputLayer], outputs)
     model.compile(keras.optimizers.Adam(learning_rate=config.LearningRate),
