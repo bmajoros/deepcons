@@ -125,14 +125,17 @@ def log(x):
     return tf.math.log(x)
 
 def logLik(p,k,N):
-    # proportional to: k*log(p)+(n-k)*log(1-p)
-    LL=k*log(p)+(n-k)*log(1-p)
-    return LL
+    print("k=",k)
+    print("N=",N)
+    #print("p=",p)
+    LL=k*log(p)+(n-k)*log(1-p) # Ignoring the constant b/c deriv is 0
+    #return LL
+    return tf.reduce_sum(LL,axis=1)
 
 @tf.autograph.experimental.do_not_convert
 def customLoss(y_true, y_pred):
-    missense=y_true[:0]
-    totalVar=y_true[:1]
+    missense=y_true[:,0]
+    totalVar=y_true[:,1]
     LL=-logLik(y_pred,missense,totalVar)
     return LL
 
@@ -169,7 +172,10 @@ def prepare_input(set,subdir,maxCases,config):
     header=lines[0].rstrip().split("\t")
     recs=lines[1:]
     (seqs,Y)=subsetFields(recs,header)
+    Y=np.array(Y)
+    #print(Y)
     matrix=pd.DataFrame(Y)
+    #print(matrix)
     matrix=tf.cast(matrix,tf.float32)
     seqs=SequenceHelper.do_one_hot_encoding(seqs,MAX_LEN)
     return (seqs,matrix)
@@ -246,7 +252,7 @@ def BuildModel(seqlen):
     numTasks=len(tasks)
     for i in range(numTasks):
         task=tasks[i]
-        outputs.append(kl.Dense(1,activation='linear',name=task)(x))
+        outputs.append(kl.Dense(1,activation='sigmoid',name=task)(x))
         loss=customLoss #"mse"
         losses.append(loss)
     model = keras.models.Model([inputLayer], outputs)
