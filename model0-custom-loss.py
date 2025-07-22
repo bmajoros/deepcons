@@ -172,7 +172,7 @@ def prepare_input(set,subdir,maxCases,config):
     matrix=pd.DataFrame(Y)
     matrix=tf.cast(matrix,tf.float32)
     seqs=SequenceHelper.do_one_hot_encoding(seqs,MAX_LEN)
-    return (seqs,Y)
+    return (seqs,matrix)
 
  
 def BuildModel(seqlen):
